@@ -1,61 +1,35 @@
 package com.engcamera.update
 
-import android.content.Context
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
-import com.engcamera.data.appDataStore
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /** 远程最新版本信息 */
 data class UpdateInfo(val version: String, val url: String)
 
 /**
- * 检查 GitHub Release 最新版本（用户需求 2026-10-22）：
- * 每天最多联网核对一次，结果缓存在 DataStore——同一天再次启动直接用缓存，
- * 不重复请求；联网失败不写入"已检查"标记，下次启动会自动重试。
+ * 检查 GitHub Release 最新版本：应用启动不再联网核对，只有设置抽屉的「检查更新」
+ * 按钮被主动点击时才请求 API（用户需求 2026-11-08）。点一次查一次，不做
+ * 「每天最多一次」节流、不读写本地缓存，结果只保留在当前会话的状态里。
  */
 object UpdateChecker {
     private const val RELEASE_API = "https://api.github.com/repos/zy8270/engCamera/releases/latest"
-    private val lastCheckDayKey = stringPreferencesKey("update_last_check_day")
-    private val latestVersionKey = stringPreferencesKey("update_latest_version")
-    private val latestUrlKey = stringPreferencesKey("update_latest_url")
 
-    /**
-     * 读取缓存的更新信息；当缓存的版本不高于当前版本时返回 null（视为已更新）。
-     * 只读本地，不联网。
-     */
-    suspend fun cached(context: Context, currentVersion: String): UpdateInfo? = withContext(Dispatchers.IO) {
-        val prefs = context.appDataStore.data.first()
-        val version = prefs[latestVersionKey] ?: return@withContext null
-        val url = prefs[latestUrlKey] ?: return@withContext null
-        if (isNewer(version, currentVersion)) UpdateInfo(version, url) else null
+    /** 主动核对结果：Success(info=null 表示已是最新；非空=有新版本)，Failure=网络/解析失败 */
+    sealed interface CheckResult {
+        data class Success(val info: UpdateInfo?) : CheckResult
+        data object Failure : CheckResult
     }
 
     /**
-     * 启动时调用：今天已检查过则直接返回缓存；否则联网查询最新 Release，
-     * 成功才记录检查日期。返回需要提示的更新信息（无更新/失败为 null）。
+     * 主动核对：立即联网查询最新 Release（不读缓存、不受日期限制）。
+     * 失败返回 Failure，调用方据此提示"核对失败"，不改动已有提示。
      */
-    suspend fun checkIfNeeded(context: Context, currentVersion: String): UpdateInfo? =
-        withContext(Dispatchers.IO) {
-            val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-            val prefs = context.appDataStore.data.first()
-            if (prefs[lastCheckDayKey] == today) return@withContext cached(context, currentVersion)
-
-            val info = fetchLatest() ?: return@withContext cached(context, currentVersion)
-            context.appDataStore.edit {
-                it[lastCheckDayKey] = today
-                it[latestVersionKey] = info.version
-                it[latestUrlKey] = info.url
-            }
-            if (isNewer(info.version, currentVersion)) info else null
-        }
+    suspend fun checkNow(currentVersion: String): CheckResult = withContext(Dispatchers.IO) {
+        val info = fetchLatest() ?: return@withContext CheckResult.Failure
+        CheckResult.Success(if (isNewer(info.version, currentVersion)) info else null)
+    }
 
     /** 请求 GitHub Release API，取 tag_name / html_url；任何失败返回 null（静默降级） */
     private fun fetchLatest(): UpdateInfo? {

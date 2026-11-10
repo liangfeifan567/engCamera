@@ -583,6 +583,7 @@ fun TemplateOptionsCard(
                                 "switch" -> {
                                     val current = when (opt.key) {
                                         "recDot" -> style.recDot
+                                        "dateOnly" -> style.dateOnly
                                         else -> false
                                     }
                                     Row(

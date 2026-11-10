@@ -102,12 +102,13 @@ class EditorViewModel(app: Application) : AndroidViewModel(app),
         }
     }
 
-    /** 模板选项：开关类（记录点/天气 emoji/位置经纬度等） */
+    /** 模板选项/字段弹窗：开关类（记录点/天气 emoji/位置经纬度/时间只显示日期等） */
     fun setTemplateSwitch(key: String, on: Boolean) = repo.update { s ->
         val st = when (key) {
             "recDot" -> s.style.copy(recDot = on)
             "weatherEmoji" -> s.style.copy(weatherEmoji = on)
             "showLatLng" -> s.style.copy(showLatLng = on)
+            "dateOnly" -> s.style.copy(dateOnly = on)
             else -> s.style
         }
         s.copy(style = st)

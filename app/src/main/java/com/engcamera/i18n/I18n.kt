@@ -60,6 +60,13 @@ private val EN_DICT: Map<String, String> = mapOf(
     "快门" to "Shutter",
     // —— 设置抽屉 ——
     "设置" to "Settings",
+    "检查更新" to "Check for updates",
+    "立即检查" to "Check now",
+    "手动核对 GitHub Release 最新版本" to "Manually check the latest GitHub Release",
+    "正在核对 GitHub Release…" to "Checking GitHub Releases…",
+    "核对失败，请检查网络后重试" to "Check failed, verify your connection and try again",
+    "发现新版本 {v}，底部可前往下载" to "New version {v} available — use the footer link below",
+    "已是最新版本" to "You're up to date",
     "同时保存原片" to "Also save originals",
     "快门声音" to "Shutter sound",
     "音量键拍照" to "Volume key shutter",
@@ -103,6 +110,9 @@ private val EN_DICT: Map<String, String> = mapOf(
     "内容" to "Content",
     "数值（纯数字，每次拍照保存后自动 +1）" to "Value (digits only, +1 after each shot)",
     "时间（留空 = 拍照时自动填写当前时间）" to "Time (empty = auto at capture)",
+    "只显示日期" to "Date only",
+    "开启后时间字段只显示日期，不显示时分秒；预览、成片、录像与手动填写同样生效" to
+        "Show only the date in the time field (no clock time). Applies to preview, photos, videos and custom values",
     "位置（留空 = 拍照时自动定位）" to "Location (empty = auto locate)",
     "天气（留空 = 拍照时自动获取）" to "Weather (empty = auto fetch)",
     "天气 Emoji（如 ☀️ 晴 26℃）" to "Weather emoji (e.g. ☀️ Fair 26℃)",

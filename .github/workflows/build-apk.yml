@@ -1,0 +1,74 @@
+name: Build APK
+
+# 云端编译：本机没有 JDK / Android SDK 时，把仓库（或 fork）推到 GitHub，
+# 在 Actions 页手动点 "Run workflow" 即可编译并下载 APK。公开仓库免费。
+# 工具链：Gradle 9.4.1 / AGP 9.2.1 / Kotlin 2.2.10 / compileSdk 36.1（Android 16 QPR2）。
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: '构建变体 / Build variant'
+        required: true
+        default: 'Debug'
+        type: choice
+        options:
+          - Debug
+          - Release
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # 固定镜像：ubuntu-24.04 预装 Android SDK cmdline-tools / platform-tools 与多个 JDK。
+    # 不用 ubuntu-latest，避免镜像滚动升级后 SDK 组件变化导致构建突然失败。
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # AGP 9.x 最低 JDK 17；项目 gradle/gradle-daemon-jvm.properties 另外把
+      # Gradle daemon 锁定到 JDK 25，settings.gradle.kts 的 foojay-resolver 会自动下载，
+      # 这里只需提供一个能启动 wrapper 的 JVM（21 LTS 最稳）。
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # 校验 wrapper 校验和并缓存 Gradle 发行包与依赖，重复构建能省几分钟。
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # runner 通常已接受许可，这里兜底；缺失的 SDK 组件由 AGP 按需自动下载。
+      # compileSdk 36.1 对应 Android SDK Platform 36.1（可能只在预览 channel，
+      # 故安装失败不阻断，交给 AGP 的 SDK auto-download 处理）。
+      - name: Prepare Android SDK
+        run: |
+          SDKMGR="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ -x "$SDKMGR" ]; then
+            yes | "$SDKMGR" --licenses > /dev/null || true
+            "$SDKMGR" "platform-tools" "build-tools;36.0.0" "platforms;android-36.1" || true
+          else
+            echo "sdkmanager not found; relying on AGP SDK auto-download"
+          fi
+
+      # 仓库中 gradlew 的 git mode 是 100644（无可执行位），Linux runner 需先 chmod。
+      # release 变体在没有 app/keystore.properties 时产出未签名 APK，不影响编译验证。
+      - name: Build APK
+        run: |
+          chmod +x ./gradlew
+          ./gradlew "assemble${{ github.event.inputs.variant || 'Debug' }}" --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: engCamera-${{ github.event.inputs.variant || 'Debug' }}-${{ github.run_number }}
+          path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 14

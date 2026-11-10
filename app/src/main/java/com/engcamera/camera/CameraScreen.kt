@@ -60,6 +60,8 @@ import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -161,8 +163,7 @@ fun CameraScreen(
     val rawWatermark by vm.watermark.collectAsState()
     val dynamic by vm.dynamic.collectAsState()
     val ui by vm.ui.collectAsState()
-    // 每日更新检查结果：非空时设置入口带红点、设置页底部显示更新提示
-    val updateInfo by vm.updateInfo.collectAsState()
+    // 更新检查改为设置抽屉里主动触发：启动阶段不做任何网络核对，也不在相机页读取结果
 
     // 主界面跟随主题（0.6.0 用户拍板：日间浅色背景+深色快门按键）；系统栏图标随主题。
     // 仅取景画面上的小浮层（镜头胶囊/录像角标/对焦圈/工程组快捷钮）保持深色半透明，
@@ -607,6 +608,18 @@ private fun SettingsDrawer(
     val themeMode by vm.themeMode.collectAsState()
     val languageMode by vm.languageMode.collectAsState()
     val updateInfo by vm.updateInfo.collectAsState()
+    val updateStatus by vm.updateCheckStatus.collectAsState()
+    val checkingUpdate = updateStatus == CameraViewModel.UpdateCheckStatus.CHECKING
+    // 「检查更新」按钮的副标题：本次核对结果优先于上一次查到的新版本提示
+    val updateStatusText = when {
+        checkingUpdate -> I18n.t("正在核对 GitHub Release…")
+        updateStatus == CameraViewModel.UpdateCheckStatus.FAILED ->
+            I18n.t("核对失败，请检查网络后重试")
+        updateInfo != null -> I18n.t("发现新版本 {v}，底部可前往下载")
+            .replace("{v}", updateInfo?.version.orEmpty())
+        updateStatus == CameraViewModel.UpdateCheckStatus.UP_TO_DATE -> I18n.t("已是最新版本")
+        else -> I18n.t("手动核对 GitHub Release 最新版本")
+    }
     val showLangPicker = remember { mutableStateOf(false) }
     val saveTree by vm.saveTree.collectAsState()
     val showSavePathDialog = remember { mutableStateOf(false) }
@@ -975,10 +988,46 @@ private fun SettingsDrawer(
                     }
                 }
                 Spacer(Modifier.height(16.dp))
+
+                // 检查更新：启动不再自动核对，只有主动点这个按钮才请求 GitHub Release API
+                // （用户需求 2026-11-08）；发现新版本时由底部署名区的提示负责跳转下载页
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            I18n.t("检查更新"),
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            updateStatusText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (updateStatus == CameraViewModel.UpdateCheckStatus.FAILED) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    if (checkingUpdate) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Button(onClick = { vm.checkForUpdates() }) {
+                            Text(I18n.t("立即检查"))
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
                 }
 
                 // 署名固定置底（不随设置内容滚动；发布日期随版本更新）；
-                // 有新版本时此处改为更新提示（带红点，点击打开 Release 页，用户需求 2026-10-22）
+                // 手动「检查更新」查到新版本时此处改为更新提示（带红点，点击打开 Release 页）
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 val update = updateInfo
                 if (update != null) {

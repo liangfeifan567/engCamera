@@ -629,6 +629,8 @@ fun EditorScreen(onBack: () -> Unit) {
             onWeatherEmojiChange = { vm.setTemplateSwitch("weatherEmoji", it) },
             showLatLngOn = state.style.showLatLng,
             onLatLngChange = { vm.setTemplateSwitch("showLatLng", it) },
+            dateOnlyOn = state.style.dateOnly,
+            onDateOnlyChange = { vm.setTemplateSwitch("dateOnly", it) },
             onRefreshLocation = { vm.refreshLocation() },
             onRefreshWeather = { vm.refreshWeather() },
             locationHint = locationHintText,
@@ -1057,6 +1059,9 @@ private fun EditFieldDialog(
     onWeatherEmojiChange: (Boolean) -> Unit,
     showLatLngOn: Boolean,
     onLatLngChange: (Boolean) -> Unit,
+    // 时间字段「只显示日期」开关（默认关；与天气 emoji/经纬度开关同款，即时生效）
+    dateOnlyOn: Boolean,
+    onDateOnlyChange: (Boolean) -> Unit,
     onRefreshLocation: () -> Unit,
     onRefreshWeather: () -> Unit,
     locationHint: String?,
@@ -1188,6 +1193,31 @@ private fun EditFieldDialog(
                         KeyboardOptions.Default
                     },
                 )
+                if (isDateTime) {
+                    // 「只显示日期」开关：挂在时间字段编辑内（与天气 emoji/经纬度开关同款），即时生效；
+                    // 值仍按完整时间存储（含手动定格值），只在渲染显示层截断，关掉开关即可恢复时分秒
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            I18n.t("只显示日期"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(
+                            checked = dateOnlyOn,
+                            onCheckedChange = onDateOnlyChange,
+                        )
+                    }
+                    Text(
+                        I18n.t("开启后时间字段只显示日期，不显示时分秒；预览、成片、录像与手动填写同样生效"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 if (isWeather) {
                     // 天气 emoji 开关：挂在天气字段编辑内（用户拍板 2026-10-13，不进模板选项卡），即时生效
                     Row(

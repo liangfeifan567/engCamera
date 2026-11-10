@@ -5,6 +5,7 @@ import com.engcamera.data.FieldType
 import com.engcamera.data.WatermarkField
 import com.engcamera.data.WatermarkState
 import com.engcamera.data.WatermarkTemplate
+import com.engcamera.data.dateOnlyText
 import com.engcamera.data.localizeDynamicPlaceholder
 import com.engcamera.data.stripLatLng
 import com.engcamera.data.weatherEmojiPrefix
@@ -28,9 +29,19 @@ object TemplateHtml {
     private const val EXTRA_MARKER = "<div data-extra></div>"
 
     /** 单字段当前显示文本（与 WatermarkRenderer.displayText 同规则，不回退标签） */
-    private fun fieldValue(f: WatermarkField, dynamic: DynamicValues, emoji: Boolean, showLatLng: Boolean): String {
+    private fun fieldValue(
+        f: WatermarkField,
+        dynamic: DynamicValues,
+        emoji: Boolean,
+        showLatLng: Boolean,
+        dateOnly: Boolean,
+    ): String {
         val text = when (f.type) {
-            FieldType.DATETIME -> f.value.ifBlank { dynamic.time }
+            FieldType.DATETIME -> {
+                val raw = f.value.ifBlank { dynamic.time }
+                // 「只显示日期」开关：与原生渲染同规则（自动值与手动定格值都截断）
+                if (dateOnly) dateOnlyText(raw) else raw
+            }
             FieldType.LOCATION -> f.value.ifBlank {
                 dynamic.location.ifBlank { com.engcamera.i18n.I18n.t("未获取定位") }
             }
@@ -50,7 +61,12 @@ object TemplateHtml {
     /** 字段当前文本（取该类型第一个"启用"的字段；关闭的字段显示标签兜底） */
     fun valueOf(type: FieldType, label: String, state: WatermarkState, dynamic: DynamicValues): String {
         val f = state.fields.firstOrNull { it.type == type && it.enabled } ?: return label
-        return fieldValue(f, dynamic, state.style.weatherEmoji, state.style.showLatLng).ifBlank { label }
+        return fieldValue(
+            f, dynamic,
+            state.style.weatherEmoji,
+            state.style.showLatLng,
+            state.style.dateOnly,
+        ).ifBlank { label }
     }
 
     fun escape(s: String): String = s
@@ -113,7 +129,14 @@ object TemplateHtml {
         }
         if (extra.isEmpty()) return body.replace(EXTRA_MARKER, "")
         val rows = extra.joinToString("") { f ->
-            val text = escape(fieldValue(f, dynamic, state.style.weatherEmoji, state.style.showLatLng))
+            val text = escape(
+                fieldValue(
+                    f, dynamic,
+                    state.style.weatherEmoji,
+                    state.style.showLatLng,
+                    state.style.dateOnly,
+                )
+            )
             // 标签随界面语言（与原生渲染同规则）
             val labelTxt = if (f.label.isBlank()) "" else com.engcamera.i18n.I18n.t(f.label)
             if (labelTxt.isBlank()) "<div>$text</div>" else "<div>${escape(labelTxt)}：$text</div>"

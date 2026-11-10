@@ -144,7 +144,9 @@ object WebTemplateRenderer {
             "|" + flags.hashCode().toString(16) +
             "|" + RENDER_WIDTH +
             "|" + state.style.webBgOpacity +
-            "|" + state.style.accentColor)
+            "|" + state.style.accentColor +
+            // 「只显示日期」开关进键：即使模板没有启用时间字段，切换开关也强制重渲
+            "|" + state.style.dateOnly)
     }
 
     /** 预览层专用：时间截断到分钟，避免预览每秒触发一次 WebView 重渲（成片烧录用真实时间，不受影响） */

@@ -23,6 +23,7 @@ import com.engcamera.data.WatermarkState
 import com.engcamera.data.WatermarkStyle
 import com.engcamera.data.WatermarkTemplates
 import com.engcamera.data.stripLatLng
+import com.engcamera.data.dateOnlyText
 import com.engcamera.data.localizeDynamicPlaceholder
 import com.engcamera.data.weatherEmojiPrefix
 import kotlin.math.max
@@ -619,18 +620,25 @@ object WatermarkRenderer {
         return null
     }
 
-    /** DATETIME 字段时间部件：手动值优先，空则拍照动态值；解析不了返回 null */
-    private fun timePartsOf(state: WatermarkState, dynamic: DynamicValues): TimeParts? {
-        val f = state.fields.firstOrNull { it.type == FieldType.DATETIME }
-        val raw = f?.value?.ifBlank { dynamic.time } ?: dynamic.time
-        return parseTimeParts(raw)
-    }
-
-    /** DATETIME 字段原文本（手动值优先，空则动态值） */
+    /**
+     * DATETIME 字段原文本（手动值优先，空则动态值）。
+     * 「只显示日期」开关打开时在这里统一截断：打卡/巡逻/马克系列的大字时间与日期行、
+     * 解析用的 TimeParts、以及解析失败时的兜底文本全部同源，预览/拍照/录像一致。
+     * 注意：截断只发生在显示层，动态值仍是完整时间，录像跨天日期会照常跳变。
+     */
     private fun timeRawOf(state: WatermarkState, dynamic: DynamicValues): String {
         val f = state.fields.firstOrNull { it.type == FieldType.DATETIME }
-        return f?.value?.ifBlank { dynamic.time } ?: dynamic.time
+        val raw = f?.value?.ifBlank { dynamic.time } ?: dynamic.time
+        return if (state.style.dateOnly) dateOnlyText(raw) else raw
     }
+
+    /** DATETIME 字段时间部件：基于（可能已截成日期的）原文本解析，解析不了返回 null */
+    private fun timePartsOf(state: WatermarkState, dynamic: DynamicValues): TimeParts? =
+        parseTimeParts(timeRawOf(state, dynamic))
+
+    /** 大字时间文本：只显示日期时不再画钟点（日期由各模板原有的日期行呈现） */
+    private fun bigTimeText(state: WatermarkState, dynamic: DynamicValues, parts: TimeParts?): String =
+        if (state.style.dateOnly) "" else (parts?.hm ?: timeRawOf(state, dynamic))
 
     /** 可两端对齐的标签：纯 CJK（可含数字，如"备注1"——用户反馈 2026-10-31 带数字字段也要
      *  两端对齐）且 ≤4 字；其余（拉丁字母等）走自然排版 */
@@ -885,12 +893,15 @@ object WatermarkRenderer {
             textShadow(w)
         }
         val parts = timePartsOf(state, dynamic)
-        val timeText = parts?.hm ?: timeRawOf(state, dynamic)
+        val timeText = bigTimeText(state, dynamic, parts)
         val timeW = timePaint.measureText(timeText).coerceAtLeast(1f)
         val timeSpacing = timePaint.fontSpacing
         // 右列（日期/星期）：实测条高 168 ≈ 日期+星期两行盒高，行盒间隙 17；
         // 天气字段（默认关，用户需求 2026-10-31）开启时追加在星期行后（参考图"星期六 晴 30℃"）
+        // 只显示日期时大字时间不画，日期行必须兜住：连时间格式都解析不了的自定义值，
+        // 也用截断后的日期文本显示（否则整个时间字段会变成空白）
         val dateText = parts?.dateDash
+            ?: if (state.style.dateOnly) timeRawOf(state, dynamic).takeIf { it.isNotBlank() } else null
         val weatherText = state.fields
             .firstOrNull { it.type == FieldType.WEATHER && it.enabled }
             ?.let { displayText(it, dynamic, style) }
@@ -904,12 +915,16 @@ object WatermarkRenderer {
         val dateW = if (hasCol) datePaint.measureText(dateText!!) else 0f
         val weekW = if (weekdayText != null) datePaint.measureText(weekdayText) else 0f
         val colW = maxOf(dateW, weekW)
-        val colH = if (hasCol) colSpacing * 2 + colGap else 0f
+        // 没有星期行时按单行算高，避免日期下方留一行空白
+        val colH = if (hasCol) {
+            if (weekdayText != null) colSpacing * 2 + colGap else colSpacing
+        } else 0f
         val barW = w * 0.0073f
         val gapTimeBar = w * 0.023f
         val gapBarDate = w * 0.022f
         val row1W = leftPad + timeW + gapTimeBar + (if (hasCol) barW + gapBarDate + colW else 0f)
-        val row1H = maxOf(timeSpacing, colH)
+        // 只显示日期时大字时间不画：行高按日期列算，别留一大块大字号空白
+        val row1H = if (state.style.dateOnly) colH.coerceAtLeast(1f) else maxOf(timeSpacing, colH)
         val locField = state.fields.firstOrNull { it.type == FieldType.LOCATION && it.enabled }
         val addrText = locField?.let { displayText(it, dynamic, style) } ?: ""
         val hasAddr = addrText.isNotBlank()
@@ -1058,7 +1073,7 @@ object WatermarkRenderer {
         }
         // ---- 头部纹章卡：黄徽标 + 蓝时间（证件团花简化为浅蓝波浪细纹） ----
         val parts = timePartsOf(state, dynamic)
-        val timeText = parts?.hm ?: timeRawOf(state, dynamic)
+        val timeText = bigTimeText(state, dynamic, parts)
         val badgePadH = w * 0.013f
         val badgeH = w * 0.044f
         val badgeR = w * 0.008f
@@ -1368,8 +1383,10 @@ object WatermarkRenderer {
                     // 日期行：dark 无标签"2026-10-30 星期五 00:01"；
                     // light 带「时 间」两端对齐标签（参考实测：时/间分居标签格两端）
                     val text = if (parts != null) {
-                        if (lightBody) "${parts.dateDot} ${parts.hm}"
-                        else "${parts.dateDash} ${com.engcamera.i18n.I18n.t(parts.weekday)} ${parts.hm}"
+                        // 只显示日期：日期行去掉行尾的时分（本布局无独立大字时间）
+                        val hm = if (state.style.dateOnly) "" else parts.hm
+                        if (lightBody) "${parts.dateDot} $hm".trim()
+                        else "${parts.dateDash} ${com.engcamera.i18n.I18n.t(parts.weekday)} $hm".trim()
                     } else {
                         timeRawOf(state, dynamic)
                     }
@@ -1565,7 +1582,7 @@ object WatermarkRenderer {
             textShadow(w)
         }
         val parts = timePartsOf(state, dynamic)
-        val timeText = parts?.hm ?: timeRawOf(state, dynamic)
+        val timeText = bigTimeText(state, dynamic, parts)
         val badgeText = com.engcamera.i18n.I18n.t("打卡")
         val checkW = w * 0.026f
         val badgePadL = w * 0.0115f
@@ -1753,9 +1770,11 @@ object WatermarkRenderer {
                 ?.let { displayText(it, dynamic, style) }
             ?: ""
         val parts = timePartsOf(state, dynamic)
-        val timeText = parts?.hm ?: timeRawOf(state, dynamic)
+        val timeText = bigTimeText(state, dynamic, parts)
         val dateText = parts?.dateDash?.split("-")?.takeIf { it.size == 3 }
-            ?.let { "${it[0]}年${it[1]}月${it[2]}日" } ?: ""
+            ?.let { "${it[0]}年${it[1]}月${it[2]}日" }
+            // 只显示日期且大字时间不画时，解析失败的自定义值也要有日期兜底
+            ?: if (state.style.dateOnly) timeRawOf(state, dynamic) else ""
         val locText = state.fields.firstOrNull { it.type == FieldType.LOCATION && it.enabled }
             ?.let { displayText(it, dynamic, style) } ?: ""
         val noteTexts = state.fields.filter { it.enabled && it.type == FieldType.NOTE }
@@ -1844,8 +1863,11 @@ object WatermarkRenderer {
             }
         }
         val inkBounds = android.graphics.Rect()
-        TextPaint(timePaint).apply { textScaleX = 1f }
-            .getTextBounds(timeText, 0, timeText.length, inkBounds)
+        // 只显示日期时 timeText 为空串：跳过 getTextBounds（空串量宽无意义），bounds 保持全 0
+        if (timeText.isNotBlank()) {
+            TextPaint(timePaint).apply { textScaleX = 1f }
+                .getTextBounds(timeText, 0, timeText.length, inkBounds)
+        }
         // 墨迹左缘 = 原点 + bounds.left×scaleX → 反向补偿让墨迹正好落在黄框左缘
         val timeDrawX = boxL - inkBounds.left * timePaint.textScaleX
 
@@ -2726,7 +2748,11 @@ private fun recColorGlow(rec: Int): Int = (rec and 0x00FFFFFF) or (0x59 shl 24)
     /** 字段当前显示文本：位置/时间标签有值（手动编辑）则优先生效，空则用拍照瞬间动态值。 */
     private fun displayText(f: WatermarkField, dynamic: DynamicValues, style: WatermarkStyle): String {
         val text = when (f.type) {
-            FieldType.DATETIME -> f.value.ifBlank { dynamic.time }
+            FieldType.DATETIME -> {
+                val raw = f.value.ifBlank { dynamic.time }
+                // 「只显示日期」开关：自动值与手动定格值同规则（原生普通行布局）
+                if (style.dateOnly) dateOnlyText(raw) else raw
+            }
             FieldType.LOCATION -> f.value.ifBlank {
                 dynamic.location.ifBlank { com.engcamera.i18n.I18n.t("未获取定位") }
             }

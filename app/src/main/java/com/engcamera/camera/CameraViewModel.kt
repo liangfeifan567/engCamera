@@ -24,6 +24,8 @@ import com.engcamera.data.ThemeMode
 import com.engcamera.data.WatermarkState
 import com.engcamera.scan.BarcodeAnalyzer
 import com.engcamera.sensor.GravitySensor
+import com.engcamera.update.UpdateChecker
+import com.engcamera.update.UpdateInfo
 import com.engcamera.util.MediaSaver
 import com.engcamera.util.VideoWatermarker
 import com.engcamera.watermark.WatermarkRenderer
@@ -136,9 +138,44 @@ class CameraViewModel(app: Application) : AndroidViewModel(app),
     private val container = (app as EngCameraApp).container
     private val context = app
 
-    /** 每日检查 GitHub Release 的结果（非空 = 有新版本，设置页展示更新提示 + 红点） */
-    private val _updateInfo = MutableStateFlow<com.engcamera.update.UpdateInfo?>(null)
-    val updateInfo: StateFlow<com.engcamera.update.UpdateInfo?> = _updateInfo.asStateFlow()
+    /** 手动检查更新的状态（应用启动不再自动核对，只有设置抽屉里主动点击才会联网） */
+    enum class UpdateCheckStatus { IDLE, CHECKING, UP_TO_DATE, FAILED }
+
+    private val _updateCheckStatus = MutableStateFlow(UpdateCheckStatus.IDLE)
+    val updateCheckStatus: StateFlow<UpdateCheckStatus> = _updateCheckStatus.asStateFlow()
+
+    /** 本次会话检查到的新版本（非空 = 设置页底部展示更新提示 + 红点，点击直达 Release 页） */
+    private val _updateInfo = MutableStateFlow<UpdateInfo?>(null)
+    val updateInfo: StateFlow<UpdateInfo?> = _updateInfo.asStateFlow()
+
+    /**
+     * 设置抽屉「检查更新」按钮：主动联网核对 GitHub Release 最新版本（用户需求 2026-11-08）。
+     * 点一次查一次；CHECKING 期间忽略重复点击，结果只保留在当前会话，不落盘、不在启动时读取。
+     */
+    fun checkForUpdates() {
+        if (_updateCheckStatus.value == UpdateCheckStatus.CHECKING) return
+        viewModelScope.launch {
+            _updateCheckStatus.value = UpdateCheckStatus.CHECKING
+            val current = runCatching {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName
+            }.getOrNull().orEmpty()
+            val result = runCatching { UpdateChecker.checkNow(current) }
+                .getOrElse { UpdateChecker.CheckResult.Failure }
+            when (result) {
+                is UpdateChecker.CheckResult.Success -> {
+                    _updateInfo.value = result.info
+                    // 有新版本时交给底部更新提示展示，这里不占用状态文案
+                    _updateCheckStatus.value = if (result.info != null) {
+                        UpdateCheckStatus.IDLE
+                    } else {
+                        UpdateCheckStatus.UP_TO_DATE
+                    }
+                }
+                is UpdateChecker.CheckResult.Failure ->
+                    _updateCheckStatus.value = UpdateCheckStatus.FAILED
+            }
+        }
+    }
 
     val watermark: StateFlow<WatermarkState> = container.repository.state
 
@@ -234,14 +271,8 @@ class CameraViewModel(app: Application) : AndroidViewModel(app),
     private var rollTimelineJob: Job? = null
 
     init {
-        // 启动时每天核对一次 GitHub Release 最新版本（用户需求 2026-10-22）：
-        // 当天已查过直接用 DataStore 缓存，联网失败下次启动重试
-        viewModelScope.launch {
-            val current = runCatching {
-                context.packageManager.getPackageInfo(context.packageName, 0).versionName
-            }.getOrNull() ?: ""
-            _updateInfo.value = com.engcamera.update.UpdateChecker.checkIfNeeded(context, current)
-        }
+        // 启动不再核对 GitHub Release（用户需求 2026-11-08）：更新检查改为设置抽屉里
+        // 的「检查更新」按钮主动触发，见 checkForUpdates()；启动阶段零网络请求、零缓存读取
         // 动态时间/位置每秒刷新（位置用于【位置】标签值为空时的拍照瞬间自动填充）
         viewModelScope.launch {
             val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA)

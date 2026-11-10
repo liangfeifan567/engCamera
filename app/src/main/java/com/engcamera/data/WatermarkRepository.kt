@@ -593,9 +593,10 @@ class WatermarkRepository(private val context: Context) {
             it.copy(
                 templateId = tpl.id,
                 fields = newFields,
-                // 水印整体透明度是跨模板通用设置（v0.6.17），切模板保留用户当前值；
-                // 宽度只在「新旧模板都暴露水印宽度选项」时继承（用户白调不丢），
-                // 否则落目标模板设计默认（巡逻 0.33 等固定版式不被别的模板宽度污染，v265）
+                // 水印整体透明度（v0.6.17）与时间「只显示日期」开关是跨模板通用设置，
+                // 切模板保留用户当前值；宽度只在「新旧模板都暴露水印宽度选项」时继承
+                // （用户白调不丢），否则落目标模板设计默认（巡逻 0.33 等固定版式
+                // 不被别的模板宽度污染，v265）
                 style = tpl.style.copy(
                     maxWidthRatio = if (
                         tpl.options.any { it.key == "maxWidthRatio" } &&
@@ -607,6 +608,7 @@ class WatermarkRepository(private val context: Context) {
                         tpl.style.maxWidthRatio
                     },
                     overallOpacity = cur.style.overallOpacity,
+                    dateOnly = cur.style.dateOnly,
                 ),
                 // 模板自带默认锚点（如液态玻璃=底部居中）则落到该位置，否则保留当前位置
                 anchorX = tpl.anchorX ?: it.anchorX,

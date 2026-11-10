@@ -83,6 +83,9 @@ data class WatermarkStyle(
     // ---- v0.6.17 水印整体透明度（所有模板的模板选项顶部拉杆，10~100%）----
     /** 水印整体不透明度百分比（10~100，默认 100）；防伪码条不跟随（保持恒清晰） */
     val overallOpacity: Int = 100,
+    // ---- 时间字段「只显示日期」开关 ----
+    /** 时间字段仅显示日期、不显示时分秒（默认关；挂在时间字段编辑弹窗内，跨模板保留） */
+    val dateOnly: Boolean = false,
 )
 
 /**
@@ -110,6 +113,27 @@ fun weatherEmojiPrefix(text: String): String = when {
 fun stripLatLng(text: String): String {
     val stripped = text.replace(Regex("\\s*[（(][-+0-9.,\\s]+[)）]\\s*$"), "")
     return stripped.ifBlank { text }
+}
+
+/** 日期前缀：yyyy-MM-dd / yyyy/M/d / yyyy.M.d（保留原分隔符与原样位数） */
+private val DATE_PREFIX = Regex("""^\s*(\d{4}[-/.]\d{1,2}[-/.]\d{1,2})""")
+
+/** 纯时间串（16:30 / 16:30:00），没有日期可显示时判空 */
+private val CLOCK_ONLY = Regex("""^\d{1,2}:\d{2}""")
+
+/**
+ * 时间字段「只显示日期」开关打开时，把原始时间文本截成日期部分；原生/网页/打卡模板共用。
+ * - 自动值 "2026-11-08 20:44:11" → "2026-11-08"
+ * - 手动定格 "2026/11/8 16:30"    → "2026/11/8"（保留用户写的分隔符）
+ * - 中文日期 "2026年11月8日 20:44" → "2026年11月8日"
+ * - 只有钟点（"16:30"）没有日期可显示 → 空串，避免开关打开后仍出现时间
+ * 解析不出日期也不含钟点时原样返回，不丢用户自定义内容。
+ */
+fun dateOnlyText(raw: String): String {
+    if (raw.isBlank()) return raw
+    DATE_PREFIX.find(raw)?.let { return it.groupValues[1] }
+    val head = raw.trim().split(Regex("\\s+"), limit = 2).first()
+    return if (CLOCK_ONLY.containsMatchIn(head)) "" else head
 }
 
 /**
