@@ -14,8 +14,12 @@ on:
         options:
           - Debug
           - Release
+  # workflow_dispatch 要求 workflow 位于默认分支；push 事件则读取被推送 commit 里的
+  # workflow 文件，因此功能分支靠 push 触发云端编译，不必先把 workflow 合进 main。
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - 'feature/**'
   pull_request:
 
 permissions:
